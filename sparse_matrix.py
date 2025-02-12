@@ -16,51 +16,43 @@ class SparseMatrix:
 
     def _read_from_file(self, file_path):
         """
-        Read a sparse matrix from a file.
-        File format:
-        rows=<number_of_rows>
-        cols=<number_of_columns>
-        (row1, col1, value1)
-        (row2, col2, value2)
-        ...
+        Read a sparse matrix from a file line by line to handle large files.
         """
-        with open(file_path, 'r') as file:
-            lines = file.readlines()
-
         rows_read = False
         cols_read = False
 
-        for line in lines:
-            line = line.strip()  # Remove leading/trailing whitespace
-            if not line:
-                continue  # Skip empty lines
+        with open(file_path, 'r') as file:
+            for line in file:
+                line = line.strip()  # Remove leading/trailing whitespace
+                if not line:
+                    continue  # Skip empty lines
 
-            if line.startswith("rows="):
-                self.rows = int(line.split("=")[1])
-                rows_read = True
-            elif line.startswith("cols="):
-                self.cols = int(line.split("=")[1])
-                cols_read = True
-            elif line.startswith("(") and line.endswith(")"):
-                # Parse (row, col, value)
-                line = line[1:-1]  # Remove parentheses
-                parts = line.split(",")
-                if len(parts) != 3:
+                if line.startswith("rows="):
+                    self.rows = int(line.split("=")[1])
+                    rows_read = True
+                elif line.startswith("cols="):
+                    self.cols = int(line.split("=")[1])
+                    cols_read = True
+                elif line.startswith("(") and line.endswith(")"):
+                    # Parse (row, col, value)
+                    line = line[1:-1]  # Remove parentheses
+                    parts = line.split(",")
+                    if len(parts) != 3:
+                        raise ValueError("Input file has wrong format")
+
+                    try:
+                        row = int(parts[0])
+                        col = int(parts[1])
+                        value = float(parts[2])  # Allow floating-point values
+                    except ValueError:
+                        raise ValueError("Input file contains invalid values")
+
+                    if row >= self.rows or col >= self.cols:
+                        raise ValueError(f"Row or column index out of bounds: ({row}, {col}) for matrix of size ({self.rows}, {self.cols})")
+
+                    self.data[(row, col)] = value
+                else:
                     raise ValueError("Input file has wrong format")
-
-                try:
-                    row = int(parts[0])
-                    col = int(parts[1])
-                    value = int(parts[2])
-                except ValueError:
-                    raise ValueError("Input file contains non-integer values")
-
-                if row >= self.rows or col >= self.cols:
-                    raise ValueError("Row or column index out of bounds")
-
-                self.data[(row, col)] = value
-            else:
-                raise ValueError("Input file has wrong format")
 
         if not rows_read or not cols_read:
             raise ValueError("Input file missing rows or cols")
@@ -71,7 +63,7 @@ class SparseMatrix:
         Returns 0 if the element is not in the sparse matrix.
         """
         if row >= self.rows or col >= self.cols:
-            raise ValueError("Row or column index out of bounds")
+            raise ValueError(f"Row or column index out of bounds: ({row}, {col}) for matrix of size ({self.rows}, {self.cols})")
         return self.data.get((row, col), 0)
 
     def set_element(self, row, col, value):
@@ -79,7 +71,7 @@ class SparseMatrix:
         Set the value at (row, col).
         """
         if row >= self.rows or col >= self.cols:
-            raise ValueError("Row or column index out of bounds")
+            raise ValueError(f"Row or column index out of bounds: ({row}, {col}) for matrix of size ({self.rows}, {self.cols})")
         if value == 0:
             self.data.pop((row, col), None)  # Remove zero elements
         else:
@@ -127,52 +119,69 @@ class SparseMatrix:
 
     def multiply(self, other):
         """
-        Multiply two sparse matrices.
+        Multiply two sparse matrices efficiently for large datasets.
         """
         if self.cols != other.rows:
             raise ValueError("Number of columns in the first matrix must match number of rows in the second matrix")
 
         result = SparseMatrix(num_rows=self.rows, num_cols=other.cols)
 
+        # Preprocess the second matrix for column-wise access
+        col_map = {}
+        for (row2, col2), value2 in other.data.items():
+            if col2 not in col_map:
+                col_map[col2] = []
+            col_map[col2].append((row2, value2))
+
+        # Perform multiplication
         for (row1, col1), value1 in self.data.items():
-            for (row2, col2), value2 in other.data.items():
-                if col1 == row2:
-                    # Accumulate the product in the result matrix
-                    current_value = result.get_element(row1, col2)
-                    result.set_element(row1, col2, current_value + value1 * value2)
+            if col1 in col_map:
+                for (row2, value2) in col_map[col1]:
+                    current_value = result.get_element(row1, row2)
+                    result.set_element(row1, row2, current_value + value1 * value2)
 
         return result
 
-    def __str__(self):
+    def write_to_file(self, file_path):
         """
-        String representation of the sparse matrix.
+        Write the sparse matrix to a file in the specified format.
         """
-        matrix = [[0 for _ in range(self.cols)] for _ in range(self.rows)]
-        for (row, col), value in self.data.items():
-            matrix[row][col] = value
-        return "\n".join(" ".join(map(str, row)) for row in matrix)
+        with open(file_path, 'w') as file:
+            file.write(f"rows={self.rows}\n")
+            file.write(f"cols={self.cols}\n")
+            for (row, col), value in self.data.items():
+                file.write(f"({row}, {col}, {value})\n")
 
 
 def main():
     try:
+        # Get input file paths from the user
+        file1 = input("Enter the path to the first matrix file: ")
+        file2 = input("Enter the path to the second matrix file: ")
+
         # Load matrices from files
-        matrix1 = SparseMatrix("matrix1.txt")
-        matrix2 = SparseMatrix("matrix2.txt")
+        matrix1 = SparseMatrix(file1)
+        matrix2 = SparseMatrix(file2)
 
-        # Perform operations
-        addition_result = matrix1.add(matrix2)
-        subtraction_result = matrix1.subtract(matrix2)
-        multiplication_result = matrix1.multiply(matrix2)
+        # Get operation from the user
+        operation = input("Enter the operation (add/subtract/multiply): ").strip().lower()
 
-        # Print results
-        print("Addition Result:")
-        print(addition_result)
+        # Perform the selected operation
+        if operation == "add":
+            result = matrix1.add(matrix2)
+            output_file = "addition_result.txt"
+        elif operation == "subtract":
+            result = matrix1.subtract(matrix2)
+            output_file = "subtraction_result.txt"
+        elif operation == "multiply":
+            result = matrix1.multiply(matrix2)
+            output_file = "multiplication_result.txt"
+        else:
+            raise ValueError("Invalid operation. Please choose 'add', 'subtract', or 'multiply'.")
 
-        print("\nSubtraction Result:")
-        print(subtraction_result)
-
-        print("\nMultiplication Result:")
-        print(multiplication_result)
+        # Write result to file
+        result.write_to_file(output_file)
+        print(f"Result written to {output_file}.")
     except Exception as e:
         print(f"Error: {e}")
 
