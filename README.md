@@ -42,4 +42,4 @@
 - Clone the Repository:
   ```bash
   git clone https://github.com/Chol1000/dsa.git
-  cd sparse_matrix
+  cd dsa
